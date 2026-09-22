@@ -163,7 +163,7 @@ document.addEventListener('click',e=>{
   const citation=e.target.closest('.case-link');
   const caseIndex=link?link.getAttribute('href').match(/^#case\/(\d+)/)?.[1]:(citation&&citation.dataset.case!==undefined?citation.dataset.case:null);
   if(caseIndex!=null)pendingCaseOrigin={topic:currentTopic,caseIndex,scroll:window.scrollY};
-});
+},true);
 
 function setPage(html,section){
   if(html.includes('<h1>סיכום התרגול</h1>'))session=null;
