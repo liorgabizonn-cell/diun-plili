@@ -39,6 +39,10 @@
 .case-field.exam-point{border-right-color:var(--sage);background:var(--pale)}
 .question-card .meta-row .small.muted{display:none}
 .chat-drawer button,.mobile-search-toggle{min-height:44px}
+.case-return{display:inline-flex;flex-direction:column;align-items:flex-start;gap:2px;background:var(--navy);border:1px solid var(--navy);color:#fff;border-radius:9px;padding:9px 14px;text-decoration:none;font-weight:800;min-height:44px;justify-content:center;margin:0 0 16px}
+.case-return:hover{background:var(--navy2);border-color:var(--navy2)}
+.case-return:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
+.case-return-topic{font-size:12px;font-weight:600;color:#e6ce94}
 @media(max-width:1100px){.stats{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:750px){
   .topbar{padding-left:95px}
@@ -56,6 +60,7 @@
   .study-rail{position:sticky;top:0;z-index:12;display:flex;gap:2px;order:-1;padding:5px;overflow-x:auto;box-shadow:0 4px 12px #14264114}
   .study-rail a{min-height:44px;display:inline-flex;align-items:center;padding:7px 10px}
   .content-block{scroll-margin-top:68px}
+  .case-return{width:100%}
   .resume-callout{align-items:flex-start;flex-direction:column}
 }
 @media(max-width:390px){.brand strong{font-size:19px}.mobile-search-toggle{min-width:66px}.mobile-nav a{font-size:12px}}
@@ -89,6 +94,7 @@ let store=initialStore();
 function restoreSession(){try{const raw=JSON.parse(localStorage.getItem(SESSION_KEY)||'null');if(!raw||!['mcq','cases'].includes(raw.kind)||!Array.isArray(raw.ids)||!Number.isInteger(raw.index)||raw.index<0||raw.index>=raw.ids.length)return null;const collection=raw.kind==='mcq'?MCQ:CASE_Q,byId=new Map(collection.map(q=>[String(q.id),q])),questions=raw.ids.map(id=>byId.get(String(id)));if(!questions.length||questions.some(q=>!q))return null;return {kind:raw.kind,questions,index:raw.index,picked:raw.picked&&typeof raw.picked==='object'?raw.picked:{},started:Number(raw.started)||Date.now()}}catch{return null}}
 let session=restoreSession();
 let currentTopic=null;
+let pendingCaseOrigin=null;
 function save(){try{localStorage.setItem(STORE_KEY,JSON.stringify({...store,session:undefined}));return true}catch{notice('השמירה במכשיר אינה זמינה');return false}}
 function saveSession(){try{if(session)localStorage.setItem(SESSION_KEY,JSON.stringify({kind:session.kind,ids:session.questions.map(q=>q.id),index:session.index,picked:session.picked,started:session.started}));else localStorage.removeItem(SESSION_KEY)}catch{notice('שמירת התרגול אינה זמינה במכשיר')}}
 function notice(message){const toast=document.getElementById('toast');toast.textContent=message;clearTimeout(notice.timer);notice.timer=setTimeout(()=>toast.textContent='',4000)}
@@ -151,6 +157,14 @@ document.querySelectorAll('[data-open-chat]').forEach(b=>b.addEventListener('cli
 // UX-only overrides. All seven embedded content layers remain untouched.
 let chatReturnFocus=null;
 
+document.addEventListener('click',e=>{
+  if(!currentTopic)return;
+  const link=e.target.closest('a[href^="#case/"]');
+  const citation=e.target.closest('.case-link');
+  const caseIndex=link?link.getAttribute('href').match(/^#case\/(\d+)/)?.[1]:(citation&&citation.dataset.case!==undefined?citation.dataset.case:null);
+  if(caseIndex!=null)pendingCaseOrigin={topic:currentTopic,caseIndex,scroll:window.scrollY};
+});
+
 function setPage(html,section){
   if(html.includes('<h1>סיכום התרגול</h1>'))session=null;
   ROOT.innerHTML=html;
@@ -209,8 +223,9 @@ function renderTopic(id){
 }
 
 function caseField(label,value,cls=''){return value?`<div class="case-field ${cls}"><h3>${label}</h3><p>${visibleContent(value)}</p></div>`:''}
-function caseCard(c,i,open=false){
-  return `<details class="case-card" id="case-${i}" ${open?'open':''}><summary><span class="case-title"><strong>${esc(c.name)}</strong><small>${esc(c.cite)}</small></span></summary><div class="case-content"><button class="review" data-review="${i}" aria-pressed="${!!store.savedCases[i]}">${store.savedCases[i]?'✓ לחזור אליו':'לחזור אליו'}</button>${c.withheld?'<div class="warning">סיכום פסק הדין אינו זמין ברשומה זו.</div>':`<div class="case-fields">${caseField('סיפור המסגרת',c.facts)}${caseField('טענות הצד המבקש',c.claimant)}${caseField('טענות הצד שכנגד',c.respondent)}${caseField('השאלה המשפטית',c.question,'key')}${caseField('נימוקי בית המשפט',c.reasoning)}${caseField('התוצאה',c.ruling)}${caseField('ההלכה',c.halacha,'key halacha')}${caseField('דעת רוב ומיעוט',c.dissent)}${caseField('ליישום במבחן',c.exam,'wide exam-point')}</div>`}</div></details>`;
+function caseCard(c,i,open=false,backTopicId=null){
+  const backLink=backTopicId?`<a class="case-return" href="#topic/${encodeURIComponent(backTopicId)}?from=case"><span>← חזרה לקריאה</span><span class="case-return-topic">${esc(topic(backTopicId)?.title||'')}</span></a>`:'';
+  return `<details class="case-card" id="case-${i}" ${open?'open':''}><summary><span class="case-title"><strong>${esc(c.name)}</strong><small>${esc(c.cite)}</small></span></summary><div class="case-content">${backLink}<button class="review" data-review="${i}" aria-pressed="${!!store.savedCases[i]}">${store.savedCases[i]?'✓ לחזור אליו':'לחזור אליו'}</button>${c.withheld?'<div class="warning">סיכום פסק הדין אינו זמין ברשומה זו.</div>':`<div class="case-fields">${caseField('סיפור המסגרת',c.facts)}${caseField('טענות הצד המבקש',c.claimant)}${caseField('טענות הצד שכנגד',c.respondent)}${caseField('השאלה המשפטית',c.question,'key')}${caseField('נימוקי בית המשפט',c.reasoning)}${caseField('התוצאה',c.ruling)}${caseField('ההלכה',c.halacha,'key halacha')}${caseField('דעת רוב ומיעוט',c.dissent)}${caseField('ליישום במבחן',c.exam,'wide exam-point')}</div>`}</div></details>`;
 }
 function renderCases(open){
   const topics=STUDY_ITEMS.filter(t=>relatedCaseIndexes(t).length);
@@ -221,8 +236,10 @@ function renderCases(open){
 function drawCases(open){
   const term=document.getElementById('case-search').value.toLocaleLowerCase('he'),topicId=document.getElementById('case-topic').value,review=document.getElementById('case-review').value;
   const matches=CASES.map((c,i)=>({c,i})).filter(({c,i})=>(!term||plain(Object.values(c).join(' ')).toLocaleLowerCase('he').includes(term))&&(!topicId||relatedCaseIndexes(topic(topicId)).includes(i))&&(!review||!!store.savedCases[i]));
+  let backTopicId=null;
+  if(open!==undefined){try{const origin=JSON.parse(sessionStorage.getItem('caseOrigin')||'null');if(origin&&String(origin.caseIndex)===String(open)&&topic(origin.topic))backTopicId=origin.topic}catch{}}
   document.getElementById('case-count').textContent=`${matches.length} מתוך ${CASES.length} רשומות פסיקה`;
-  document.getElementById('case-results').innerHTML=matches.map(({c,i})=>caseCard(c,i,String(i)===String(open))).join('')||'<p>לא נמצאה פסיקה בסינון הנוכחי.</p>';
+  document.getElementById('case-results').innerHTML=matches.map(({c,i})=>caseCard(c,i,String(i)===String(open),String(i)===String(open)?backTopicId:null)).join('')||'<p>לא נמצאה פסיקה בסינון הנוכחי.</p>';
   document.querySelectorAll('[data-review]').forEach(b=>b.addEventListener('click',()=>{const i=b.dataset.review;store.savedCases[i]=!store.savedCases[i];save();b.setAttribute('aria-pressed',String(!!store.savedCases[i]));b.textContent=store.savedCases[i]?'✓ לחזור אליו':'לחזור אליו'}));
   if(open!==undefined)document.getElementById('case-'+open)?.scrollIntoView({block:'start'});
 }
@@ -249,7 +266,33 @@ function route(){
   const raw=location.hash.slice(1)||'home';const [path,params='']=raw.split('?');const [view,id]=path.split('/');
   document.getElementById('more-panel').hidden=true;document.getElementById('search-results').hidden=true;
   currentTopic=view==='topic'?id:null;
-  if(view==='learn')renderLearn();else if(view==='topic')renderTopic(decodeURIComponent(id||''));else if(view==='cases')renderCases();else if(view==='case')renderCases(id);else if(view==='limitations')renderLimitations();else if(view==='practice')renderPractice(view==='practice'&&id==='cases'?'mode=cases&'+params:params);else if(view==='exams')renderExams();else renderHome();
+  if(view==='case'){
+    try{
+      if(pendingCaseOrigin&&String(pendingCaseOrigin.caseIndex)===String(id))sessionStorage.setItem('caseOrigin',JSON.stringify(pendingCaseOrigin));
+      else sessionStorage.removeItem('caseOrigin');
+    }catch{}
+  }
+  pendingCaseOrigin=null;
+  if(view==='learn')renderLearn();
+  else if(view==='topic'){
+    renderTopic(decodeURIComponent(id||''));
+    if(new URLSearchParams(params).get('from')==='case'){
+      try{
+        const origin=JSON.parse(sessionStorage.getItem('caseOrigin')||'null');
+        if(origin&&origin.topic===decodeURIComponent(id||'')){
+          const y=origin.scroll||0;
+          requestAnimationFrame(()=>requestAnimationFrame(()=>window.scrollTo(0,y)));
+        }
+        sessionStorage.removeItem('caseOrigin');
+      }catch{}
+    }
+  }
+  else if(view==='cases')renderCases();
+  else if(view==='case')renderCases(id);
+  else if(view==='limitations')renderLimitations();
+  else if(view==='practice')renderPractice(view==='practice'&&id==='cases'?'mode=cases&'+params:params);
+  else if(view==='exams')renderExams();
+  else renderHome();
 }
 
 function openChat(event){
